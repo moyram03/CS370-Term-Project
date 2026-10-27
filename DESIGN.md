@@ -4,6 +4,13 @@ The system we are creating will use a Raspberry Pi4 Model B connected to two sen
 
 The system will use separate processes to collect data and send the readings to a more centralized process for analysis and keeping the storage. The data that is collected will be saved locally so users can review conditions that might be changing from current and previous conditions.
 ## 2. Mechanism Mapping
+### Mechanism D
+Our system will store temperature and humidity readings in an append only log file. Each reading will include the time it was recorded. This will allow users to look at past readings and see when conditions might have been good for mold growth. We will also make sure the system can recover if it loses power while saving data.
+
+
+### Mechanism E
+Our system will use separate processes to read data from each sensor. These processes will send their readings to a main process that handles the data. We will also have a supervisor that checks if the processes are running and restarts them if they stop working. This will help the device continue running without someone having to watch it.
+
 ## 3. Failure Modes
 ## 4. Storage and Data
 ## 5. Constraints and Substitutions
