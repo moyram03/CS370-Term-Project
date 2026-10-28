@@ -59,5 +59,25 @@ To test our storage system, we will simulate a power outage while data is being 
 
 We will also test our supervisor by stopping one of the sensor processes to see if it automatically restarts. Finally, we plan to leave the system running for 48 hours to make sure it can collect and store data without needing someone to monitor it.
 
-## 7. Ownership Map
+## Ownership Map
+We plan to divide the work between both team members so that each person has responsibilities for developing and testing the system.
+
+### Moises Responsibilities
+- Develop the custom storage system (Mechanism D).
+- Implement the log file and recovery process.
+- Test data storage and power outage recovery.
+
+### Rishab Responsibilities
+- Develop the multi-process system (Mechanism E).
+- Set up communication between the sensor processes.
+- Implement and test the supervisor that restarts failed processes.
+
+### Shared Responsibilities
+- Connect and test both sensors with the Raspberry Pi.
+- Research temperature and humidity conditions that may encourage mold growth.
+- Develop the logic that combines readings from both sensors to identify conditions favorable for mold growth.
+- Test the detection logic using different temperature and humidity readings.
+- Integrate the storage and multi-process systems.
+- Run the 48-hour test and complete the final documentation.
+
 ## 8. AI-Use Plan
