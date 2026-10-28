@@ -45,7 +45,13 @@ New readings will be added to the end of the file so previous data is not lost. 
 
 The system will use fsync() every 5 minutes to save the readings to storage. If the Raspberry Pi loses power, some recent readings may be lost. When it restarts, the system will check for incomplete records and recover the valid data.
 
-## 5. Constraints and Substitutions
+## Constraints and Substitutions
+Our system will use a Raspberry Pi 4 Model B with an Adafruit Si7021 humidity sensor and a waterproof DS18B20 temperature sensor. Both sensors are available, and we are currently working on setting them up and testing them.
+
+One limitation we noticed is that the DS18B20 temperature sensor takes longer to provide readings. We will need to account for this when collecting data every 30 seconds.
+
+The Raspberry Pi will also need a constant power source to operate. If the power goes out, the system will stop collecting readings until power is restored.
+
 ## 6. Evaluation Plan
 ## 7. Ownership Map
 ## 8. AI-Use Plan
