@@ -9,7 +9,7 @@ Our system will store temperature and humidity readings in an append only log fi
 
 
 ### Mechanism E
-Our system will use separate processes to read data from each sensor. These processes will send their readings to a main process that handles the data. We will also have a supervisor that checks if the processes are running and restarts them if they stop working. This will help the device continue running without someone having to watch it.
+Our system will use separate processes to read data from each sensor. These processes will send their readings to a main process that handles the data. We will also have a supervisor that checks if the processes are running and restarts them if they stop working. This will help the device continue running without someone having to watch it. Additionally, it will allow the sensors to run asynchronously and not wait for one another.
 
 ## Failure Modes
 ### Humidity Sensor Failure
