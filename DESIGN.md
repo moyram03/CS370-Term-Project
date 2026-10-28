@@ -52,6 +52,12 @@ One limitation we noticed is that the DS18B20 temperature sensor takes longer to
 
 The Raspberry Pi will also need a constant power source to operate. If the power goes out, the system will stop collecting readings until power is restored.
 
-## 6. Evaluation Plan
+## Evaluation Plan
+We will test our system to make sure both sensors collect temperature and humidity readings every 30 seconds. We will also check that the readings are being saved correctly and that the slower temperature sensor does not prevent the system from collecting data.
+
+To test our storage system, we will simulate a power outage while data is being saved. When the Raspberry Pi restarts, we will check that the system recovers valid readings and continues collecting new data.
+
+We will also test our supervisor by stopping one of the sensor processes to see if it automatically restarts. Finally, we plan to leave the system running for 48 hours to make sure it can collect and store data without needing someone to monitor it.
+
 ## 7. Ownership Map
 ## 8. AI-Use Plan
