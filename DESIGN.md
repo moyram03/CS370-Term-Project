@@ -80,4 +80,9 @@ We plan to divide the work between both team members so that each person has res
 - Integrate the storage and multi-process systems.
 - Run the 48-hour test and complete the final documentation.
 
-## 8. AI-Use Plan
+## AI-Use Plan
+We plan to use Claude Code to help us develop and test our project. We will use it to help understand C programming concepts, troubleshoot errors, and get suggestions for implementing our storage and multi-process systems.
+
+Both team members will review and test any code generated with AI to make sure we understand how it works and that it meets the project requirements.
+
+We will also keep copies of our Claude Code transcripts to document how AI was used throughout the project.
