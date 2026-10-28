@@ -14,7 +14,7 @@ Our system will use separate processes to read data from each sensor. These proc
 ## Failure Modes
 ### Humidity Sensor Failure
 - Detection: The sensor stops sending readings or returns an error.
-- - Response: The system tries to reconnect and continues collecting temperature data.
+- Response: The system tries to reconnect and continues collecting temperature data.
 - Log: Records the sensor error and when it recovers.
 
 ### Temperature Sensor Failure
@@ -38,7 +38,13 @@ Our system will use separate processes to read data from each sensor. These proc
 - Log: Records the storage error when possible.
 
 
-## 4. Storage and Data
+## Storage and Data
+Our system will collect temperature and humidity readings every 30 seconds. Each reading will include a timestamp, temperature, and humidity level. The readings will be stored locally on the Raspberry Pi using an append-only log file.
+
+New readings will be added to the end of the file so previous data is not lost. We plan to keep the data for 30 days before removing older readings to save space.
+
+The system will use fsync() every 5 minutes to save the readings to storage. If the Raspberry Pi loses power, some recent readings may be lost. When it restarts, the system will check for incomplete records and recover the valid data.
+
 ## 5. Constraints and Substitutions
 ## 6. Evaluation Plan
 ## 7. Ownership Map
