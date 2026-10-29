@@ -12,7 +12,8 @@
 /* Which sensor produced the reading. */
 typedef enum {
     SENSOR_SI7021_HUMIDITY = 1,  /* value is relative humidity, in %RH */
-    SENSOR_DS18B20_TEMP    = 2   /* value is temperature, in degrees C */
+    SENSOR_DS18B20_TEMP    = 2,  /* value is surface temperature, in degrees C */
+    SENSOR_SI7021_TEMP     = 3   /* value is air temperature, in degrees C */
 } sensor_id_t;
 
 /* Whether the reading is valid. Failures are recorded too, so the log

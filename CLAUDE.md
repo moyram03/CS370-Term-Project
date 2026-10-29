@@ -59,6 +59,7 @@ Still empty placeholders (owned/worked on separately; don't modify without askin
 ## Data format (agreed; don't change without asking)
 
 - **`sample_t`** is exactly 24 bytes (enforced by `_Static_assert`): `int64_t timestamp_ms`, `uint32_t seq`, `float value`, `uint8_t sensor`, `uint8_t status`, `uint8_t reserved[6]` (always 0). It is shared by the sensors, hub, and storage, and written raw to disk.
+- **`sensor`** is a `sensor_id_t`: `SENSOR_SI7021_HUMIDITY = 1` (relative humidity, %RH), `SENSOR_DS18B20_TEMP = 2` (surface temperature, °C), `SENSOR_SI7021_TEMP = 3` (air temperature, °C; the mold analysis combines it with the humidity to compute dew point). The struct layout is unchanged.
 - **`seq`** is a per-sensor-process counter that starts at 0 when the process starts and increments on every reading, including failed reads. A gap means lost readings; a reset to 0 means the process restarted.
 - **Log record** is exactly 32 bytes: `[magic "MOLD" 4B][sample_t 24B][crc32 of bytes 0..27, 4B]`, in native (little-endian) byte order, no file header.
 
