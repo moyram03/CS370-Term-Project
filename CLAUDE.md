@@ -4,7 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and a skeleton of empty source, test, and build files. No code has been written yet, and the `Makefile` is empty, so there are no build/lint/test commands to run at this stage. Update this file once code and build targets are added.
+The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The sensor readers, hub, supervisor, and mold analysis files are still empty placeholders and are being worked on separately.
+
+## Build and test
+
+```
+make test    # build and run the storage tests (build/test_applog)
+make         # build only
+make clean   # remove build/
+```
+
+The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. Only the storage tests are wired up so far; add targets for the other components as their code lands.
 
 `DESIGN.md` is the source of truth for architecture and requirements; where it differs from `README.md` (e.g. mechanism choices), follow `DESIGN.md`.
 
@@ -25,17 +35,35 @@ The README's original guess of mechanism F (high rate sampling pipeline) was rep
 
 ## Code layout
 
-All files below currently exist as empty placeholders.
+Implemented:
 
-- `src/common/sample.h` — shared reading/sample type
+- `src/common/sample.h` — shared reading type `sample_t` (see below)
+- `src/store/applog.{c,h}` — append-only log and recovery (Mechanism D)
+- `tests/test_applog.c` — storage tests (append/read-back, record layout, recovery, partial writes, `read_all`)
+- `Makefile`, `.gitignore`
+
+Still empty placeholders (owned/worked on separately; don't modify without asking):
+
 - `src/sensors/si7021_reader.c` — humidity sensor process
 - `src/sensors/ds18b20_reader.c` — temperature sensor process
 - `src/hub/hub.c` — central process that receives readings, runs analysis, and writes storage
 - `src/supervisor/supervisor.c` — watches and restarts the sensor/hub processes (Mechanism E)
-- `src/store/applog.{c,h}` — append-only log and recovery (Mechanism D)
 - `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions
-- `tests/test_applog.c`, `tests/test_mold.c` — tests for storage and detection logic
-- `Makefile` — build file
+- `tests/test_mold.c` — tests for detection logic
+
+## Data format (agreed; don't change without asking)
+
+- **`sample_t`** is exactly 24 bytes (enforced by `_Static_assert`): `int64_t timestamp_ms`, `uint32_t seq`, `float value`, `uint8_t sensor`, `uint8_t status`, `uint8_t reserved[6]` (always 0). It is shared by the sensors, hub, and storage, and written raw to disk.
+- **`seq`** is a per-sensor-process counter that starts at 0 when the process starts and increments on every reading, including failed reads. A gap means lost readings; a reset to 0 means the process restarted.
+- **Log record** is exactly 32 bytes: `[magic "MOLD" 4B][sample_t 24B][crc32 of bytes 0..27, 4B]`, in native (little-endian) byte order, no file header.
+
+## Storage behavior (`applog`)
+
+- `applog_open()` always runs recovery: it scans records from the start and truncates the file at the first cut-off or bad (magic/CRC) record, then fsyncs. Damage in the middle of the file therefore also drops the good records after it; this is the chosen behavior for now and is locked in by a test.
+- `applog_append()` writes with `O_APPEND` and only hands data to the OS. If a write fails partway (e.g. disk full), it truncates the partial record and returns -1 with `errno` set; the caller decides what to do.
+- `applog_sync()` is just `fsync()`. The 5-minute fsync timer belongs to the hub, not to `applog`.
+- `applog_read_all()` callbacks return 0 to continue or 1 to stop; it returns 0 (read everything), 1 (stopped early), or -1 (I/O error), and never modifies the file.
+- Not yet implemented: 30-day retention (likely one log file per day, deleting files older than 30 days).
 
 ## Failure modes to handle
 
