@@ -20,6 +20,10 @@
  *
  * Every threshold below is a starting value to be tuned once we have real
  * data from the 48-hour run.
+ *
+ * Inputs must be finite (no NaN or infinity). This module does not check:
+ * the hub only passes readings whose status is SAMPLE_OK, so rejecting bad
+ * data is the hub's job.
  */
 
 /* ---- Constants (all starting values to tune) ---- */
@@ -60,6 +64,10 @@
  * gap (a crash, a restart, a sensor outage) is clamped to this so wet time
  * nobody measured is not counted. Starting value to tune. */
 #define MOLD_MAX_DT_S                  300.0
+
+/* Smallest RH, in %RH, that mold_dew_point_c() will use. log(0) is
+ * undefined, so 0 %RH is treated as this instead. */
+#define MOLD_RH_MIN_PCT                0.01
 
 /* ---- Types ---- */
 
@@ -110,8 +118,9 @@ double mold_sat_vapor_hpa(double t_c);
 
 /*
  * Dew point, in degrees C, of air at `t_c` degrees C and `rh_pct` %RH
- * (Magnus formula, inverted). `rh_pct` is clamped to a small positive
- * minimum so that 0 %RH gives a very low dew point instead of an error.
+ * (Magnus formula, inverted). `rh_pct` is clamped to
+ * MOLD_RH_MIN_PCT..100, so 0 %RH gives a very low dew point instead of an
+ * error, and a reading above 100 %RH gives a dew point equal to `t_c`.
  */
 double mold_dew_point_c(double t_c, double rh_pct);
 
@@ -119,7 +128,9 @@ double mold_dew_point_c(double t_c, double rh_pct);
  * Relative humidity at a surface at `surface_t_c`, given air at `air_t_c`
  * and `air_rh_pct`. The air's vapor pressure stays the same, so the result
  * is air RH * e_s(air) / e_s(surface), clamped to 0..100. A surface cooler
- * than the air therefore sees a higher RH than the air does.
+ * than the air therefore sees a higher RH than the air does. `air_rh_pct`
+ * is also clamped to 0..100 first, so an over-range reading cannot inflate
+ * the result.
  */
 double mold_surface_rh(double air_t_c, double air_rh_pct, double surface_t_c);
 

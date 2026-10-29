@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The sensor readers, hub, supervisor, and mold analysis files are still empty placeholders and are being worked on separately.
+The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The mold analysis interface is in `src/analysis/mold.h`; `mold_sat_vapor_hpa`, `mold_dew_point_c`, and `mold_surface_rh` are implemented and tested, while `mold_init` and `mold_update` are declared but not yet implemented. The sensor readers, hub, and supervisor are still empty placeholders and are being worked on separately.
 
 ## Build and test
 
 ```
-make test    # build and run the storage tests (build/test_applog)
+make test    # build and run all tests (build/test_applog, build/test_mold)
+make asan    # same tests under AddressSanitizer + UBSan (build/asan/)
 make         # build only
 make clean   # remove build/
 ```
 
-The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. Only the storage tests are wired up so far; add targets for the other components as their code lands.
+The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. `make test` runs both test binaries even if the first fails, and fails if either did. The storage and mold math tests are wired up so far; add targets for the other components as their code lands.
 
 `DESIGN.md` is the source of truth for architecture and requirements; where it differs from `README.md` (e.g. mechanism choices), follow `DESIGN.md`.
 
@@ -42,12 +43,12 @@ Implemented:
 - `tests/test_applog.c` — storage tests (append/read-back, record layout, recovery, partial writes, `read_all`)
 - `Makefile`, `.gitignore`
 
-Rishab's sessions write these (currently empty placeholders):
+Rishab's sessions write these:
 
-- `src/sensors/si7021_reader.c` — humidity sensor process
-- `src/sensors/ds18b20_reader.c` — temperature sensor process
-- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews)
-- `tests/test_mold.c` — tests for detection logic
+- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews). Pure computation: inputs must be finite, and the hub only passes readings whose status is `SAMPLE_OK`. Math functions done; `mold_init`/`mold_update` still to do.
+- `tests/test_mold.c` — tests for the mold math (detection tests come with `mold_update`)
+- `src/sensors/si7021_reader.c` — humidity sensor process (empty placeholder)
+- `src/sensors/ds18b20_reader.c` — temperature sensor process (empty placeholder)
 
 Still empty placeholders (owned/worked on separately; don't modify without asking):
 
