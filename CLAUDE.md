@@ -42,14 +42,19 @@ Implemented:
 - `tests/test_applog.c` — storage tests (append/read-back, record layout, recovery, partial writes, `read_all`)
 - `Makefile`, `.gitignore`
 
-Still empty placeholders (owned/worked on separately; don't modify without asking):
+Rishab's sessions write these (currently empty placeholders):
 
 - `src/sensors/si7021_reader.c` — humidity sensor process
 - `src/sensors/ds18b20_reader.c` — temperature sensor process
+- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews)
+- `tests/test_mold.c` — tests for detection logic
+
+Still empty placeholders (owned/worked on separately; don't modify without asking):
+
 - `src/hub/hub.c` — central process that receives readings, runs analysis, and writes storage
 - `src/supervisor/supervisor.c` — watches and restarts the sensor/hub processes (Mechanism E)
-- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions
-- `tests/test_mold.c` — tests for detection logic
+
+`src/store/` is Moises's; don't modify it without asking.
 
 ## Data format (agreed; don't change without asking)
 
@@ -74,6 +79,19 @@ Per `DESIGN.md`: either sensor failing (keep collecting from the other sensor, r
 - **Moises**: Mechanism D (storage, log file, recovery, power-loss testing).
 - **Rishab**: Mechanism E (multi-process system, IPC, supervisor).
 - **Shared**: sensor bring-up, mold detection logic and its tests, integration, 48-hour run, final documentation.
+
+In Rishab's sessions, Claude writes `src/sensors/` and `src/analysis/` (plus `tests/test_mold.c`). The mold logic is shared work, so Moises reviews it. `src/store/` stays Moises's.
+
+## Workflow
+
+- Plan first for multi-file or algorithmic changes, and wait for Rishab's approval before writing code.
+- A change is only done when `make test` passes.
+- Commit messages use the form `M<n>: <what>`.
+- Never weaken, skip, or delete a test to make it pass.
+
+## Style
+
+C17; use full `if`/`else` blocks instead of the ternary `?:` operator.
 
 ## AI-use notes
 
