@@ -2,6 +2,12 @@ CC     = gcc
 CFLAGS = -std=c17 -Wall -Wextra -Werror
 BUILD  = build
 
+# macOS hides mkdtemp() when _XOPEN_SOURCE is set; this brings it back.
+# Linux and Pi builds are unchanged.
+ifeq ($(shell uname -s),Darwin)
+CFLAGS += -D_DARWIN_C_SOURCE
+endif
+
 .PHONY: all test clean
 
 all: $(BUILD)/test_applog
