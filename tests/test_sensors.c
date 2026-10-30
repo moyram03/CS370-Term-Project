@@ -2,6 +2,7 @@
 #define _XOPEN_SOURCE 700
 
 #include "../src/sensors/ds18b20.h"
+#include "../src/sensors/si7021.h"
 
 #include <dirent.h>
 #include <math.h>
@@ -12,7 +13,8 @@
 #include <unistd.h>
 
 /*
- * Tests for the DS18B20 w1_slave parser, device finder, and file reader. CHECK() reports a failure and
+ * Tests for the DS18B20 w1_slave parser, device finder, and file reader,
+ * and the Si7021 checksum and reply conversion. CHECK() reports a failure and
  * keeps going, so one run shows every problem. Exit status is 0 only if
  * every check passed. Doubles are compared with NEAR() and a tolerance.
  * The find/read tests build a fake 1-Wire folder inside a temporary
@@ -375,6 +377,137 @@ static void test_read_unreadable(void)
     CHECK(t == SENTINEL);
 }
 
+/* ---- Si7021 checksum and reply conversion ---- */
+
+/* Fill `buf` with an RH reply for the 16-bit `code`, with a correct CRC. */
+static void rh_reply(unsigned code, uint8_t buf[3])
+{
+    buf[0] = (uint8_t)(code >> 8);
+    buf[1] = (uint8_t)(code & 0xFF);
+    buf[2] = si7021_crc8(buf, 2);
+}
+
+/* Parse an RH reply for `code` expecting success; check the value. */
+#define EXPECT_RH_OK(code, expected)                                      \
+    do {                                                                  \
+        uint8_t b_[3];                                                    \
+        rh_reply((code), b_);                                             \
+        float r_ = SENTINEL;                                              \
+        CHECK(si7021_parse_rh(b_, &r_) == SAMPLE_OK);                     \
+        NEAR(r_, (expected), 0.01);                                       \
+    } while (0)
+
+/* Parse a temperature reply (MSB, LSB) expecting success. */
+#define EXPECT_TEMP_OK(msb, lsb, expected)                                \
+    do {                                                                  \
+        const uint8_t b_[2] = { (msb), (lsb) };                           \
+        float t_ = SENTINEL;                                              \
+        CHECK(si7021_parse_temp(b_, &t_) == SAMPLE_OK);                   \
+        NEAR(t_, (expected), 0.01);                                       \
+    } while (0)
+
+/* Parse a temperature reply (MSB, LSB) expecting SAMPLE_ERR_READ. */
+#define EXPECT_TEMP_ERR(msb, lsb)                                         \
+    do {                                                                  \
+        const uint8_t b_[2] = { (msb), (lsb) };                           \
+        float t_ = SENTINEL;                                              \
+        CHECK(si7021_parse_temp(b_, &t_) == SAMPLE_ERR_READ);             \
+        CHECK(t_ == SENTINEL);                                            \
+    } while (0)
+
+static void test_si7021_crc8(void)
+{
+    /* Computed from the stated algorithm (polynomial 0x31, initial value
+     * 0x00); to be confirmed against live sensor readings in the I2C
+     * slice. */
+    const uint8_t a[] = { 0x68, 0x3A };
+    CHECK(si7021_crc8(a, sizeof a) == 0x7C);
+    const uint8_t b[] = { 0x72, 0xB0 };
+    CHECK(si7021_crc8(b, sizeof b) == 0x5D);
+    const uint8_t zeros[] = { 0x00, 0x00 };
+    CHECK(si7021_crc8(zeros, sizeof zeros) == 0x00);
+
+    CHECK(si7021_crc8(a, 0) == 0x00);       /* empty input: the initial value */
+    CHECK(si7021_crc8(NULL, 2) == 0x00);    /* NULL counts as empty */
+}
+
+static void test_si7021_rh_ok(void)
+{
+    EXPECT_RH_OK(0x72B0, 50.00);
+    /* The two low bits are status bits and must not change the result. */
+    EXPECT_RH_OK(0x72B1, 50.00);
+    EXPECT_RH_OK(0x72B2, 50.00);
+    EXPECT_RH_OK(0x72B3, 50.00);
+}
+
+static void test_si7021_rh_clamp(void)
+{
+    uint8_t buf[3];
+    float rh = SENTINEL;
+
+    rh_reply(0x0000, buf);  /* exactly -6 %RH */
+    CHECK(si7021_parse_rh(buf, &rh) == SAMPLE_OK);
+    NEAR(rh, 0.0, 1e-9);
+
+    rh = SENTINEL;
+    rh_reply(0xFFFC, buf);  /* about 119 %RH */
+    CHECK(si7021_parse_rh(buf, &rh) == SAMPLE_OK);
+    NEAR(rh, 100.0, 1e-9);
+}
+
+static void test_si7021_rh_crc(void)
+{
+    uint8_t good[3];
+    rh_reply(0x72B0, good);
+    float rh = SENTINEL;
+    CHECK(si7021_parse_rh(good, &rh) == SAMPLE_OK);
+
+    /* A CRC-8 catches every single-bit error: flip each of the 24 bits. */
+    for (int bit = 0; bit < 24; bit++) {
+        uint8_t bad[3];
+        memcpy(bad, good, sizeof bad);
+        bad[bit / 8] ^= (uint8_t)(1u << (bit % 8));
+        rh = SENTINEL;
+        CHECK(si7021_parse_rh(bad, &rh) == SAMPLE_ERR_READ);
+        CHECK(rh == SENTINEL);
+    }
+}
+
+static void test_si7021_temp_ok(void)
+{
+    EXPECT_TEMP_OK(0x68, 0xAC, 25.00);
+    /* Low status bits are ignored here too. */
+    EXPECT_TEMP_OK(0x68, 0xAD, 25.00);
+    EXPECT_TEMP_OK(0x68, 0xAE, 25.00);
+    EXPECT_TEMP_OK(0x68, 0xAF, 25.00);
+}
+
+static void test_si7021_temp_range(void)
+{
+    EXPECT_TEMP_ERR(0x00, 0x00);  /* -46.85 C */
+    EXPECT_TEMP_ERR(0xFF, 0xFC);  /* about 128.9 C */
+
+    /* Just inside and just outside each limit. */
+    EXPECT_TEMP_OK(0x09, 0xFC, -39.997);   /* -40 C limit */
+    EXPECT_TEMP_ERR(0x09, 0xF8);           /* -40.007 C */
+    EXPECT_TEMP_OK(0xFA, 0x5C, 124.998);   /* 125 C limit */
+    EXPECT_TEMP_ERR(0xFA, 0x60);           /* 125.009 C */
+}
+
+static void test_si7021_null_args(void)
+{
+    uint8_t rh_buf[3];
+    rh_reply(0x72B0, rh_buf);
+    const uint8_t temp_buf[2] = { 0x68, 0xAC };
+    float out = SENTINEL;
+
+    CHECK(si7021_parse_rh(NULL, &out) == SAMPLE_ERR_READ);
+    CHECK(si7021_parse_rh(rh_buf, NULL) == SAMPLE_ERR_READ);
+    CHECK(si7021_parse_temp(NULL, &out) == SAMPLE_ERR_READ);
+    CHECK(si7021_parse_temp(temp_buf, NULL) == SAMPLE_ERR_READ);
+    CHECK(out == SENTINEL);
+}
+
 static void run(const char *name, void (*test)(void))
 {
     int before = failures;
@@ -412,6 +545,13 @@ int main(void)
     RUN(test_read_crc_no);
     RUN(test_read_deleted);
     RUN(test_read_unreadable);
+    RUN(test_si7021_crc8);
+    RUN(test_si7021_rh_ok);
+    RUN(test_si7021_rh_clamp);
+    RUN(test_si7021_rh_crc);
+    RUN(test_si7021_temp_ok);
+    RUN(test_si7021_temp_range);
+    RUN(test_si7021_null_args);
 
     remove_tree(tmpdir);
 

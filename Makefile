@@ -13,8 +13,8 @@ APPLOG_SRC = tests/test_applog.c src/store/applog.c
 APPLOG_DEP = src/store/applog.h src/common/sample.h
 MOLD_SRC   = tests/test_mold.c src/analysis/mold.c
 MOLD_DEP   = src/analysis/mold.h
-SENSORS_SRC = tests/test_sensors.c src/sensors/ds18b20.c
-SENSORS_DEP = src/sensors/ds18b20.h src/common/sample.h
+SENSORS_SRC = tests/test_sensors.c src/sensors/ds18b20.c src/sensors/si7021.c
+SENSORS_DEP = src/sensors/ds18b20.h src/sensors/si7021.h src/common/sample.h
 READER_SRC  = src/sensors/ds18b20_reader.c src/sensors/ds18b20.c
 READER_DEP  = src/sensors/ds18b20.h src/common/sample.h
 
