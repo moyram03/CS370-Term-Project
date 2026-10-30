@@ -18,6 +18,30 @@ static double clamp(double x, double lo, double hi)
     return x;
 }
 
+/*
+ * Level after `wet_hours`, given the current level. A level is entered at
+ * its ENTER threshold and left only below its EXIT threshold, so the level
+ * does not flap around one value. RISK can fall straight to OK if wet hours
+ * are already below the WATCH exit threshold.
+ */
+static mold_level_t next_level(mold_level_t current, double wet_hours)
+{
+    mold_level_t level = current;
+    if (wet_hours >= MOLD_RISK_ENTER_HOURS) {
+        level = MOLD_RISK;
+    } else if (level == MOLD_RISK) {
+        if (wet_hours < MOLD_RISK_EXIT_HOURS) {
+            level = MOLD_WATCH;
+        }
+    } else if (level == MOLD_OK && wet_hours >= MOLD_WATCH_ENTER_HOURS) {
+        level = MOLD_WATCH;
+    }
+    if (level == MOLD_WATCH && wet_hours < MOLD_WATCH_EXIT_HOURS) {
+        level = MOLD_OK;
+    }
+    return level;
+}
+
 double mold_sat_vapor_hpa(double t_c)
 {
     return 6.112 * exp(MAGNUS_A * t_c / (MAGNUS_B + t_c));
@@ -86,8 +110,8 @@ int mold_update(mold_state_t *s, const mold_input_t *in, double dt_s,
         }
     }
     s->wet_hours = wet_hours;
+    s->level = next_level(s->level, wet_hours);
 
-    /* The level state machine comes in a later slice; s->level is left as is. */
     out->dew_point_c = dew_point_c;
     out->surface_rh_pct = surface_rh;
     out->condensation = condensation;

@@ -151,6 +151,9 @@ void mold_init(mold_state_t *s);
  *     if not, subtracts MOLD_DRY_DECAY_PER_HOUR * dt hours, down to a
  *     minimum of 0;
  *   - updates the level from wet_hours using the ENTER/EXIT thresholds.
+ *     RISK can drop straight to OK if wet_hours is already below
+ *     MOLD_WATCH_EXIT_HOURS. The level is re-evaluated on every successful
+ *     call, even when `dt_s` is 0.
  *
  * Returns 0 on success and fills in `out` (which must not be NULL). Returns
  * -1 if `in->have_air` is false: without air data nothing can be computed,
