@@ -1,13 +1,22 @@
+/* Needed for mkdtemp under -std=c17. */
+#define _XOPEN_SOURCE 700
+
 #include "../src/sensors/ds18b20.h"
 
+#include <dirent.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /*
- * Tests for the DS18B20 w1_slave parser. CHECK() reports a failure and
+ * Tests for the DS18B20 w1_slave parser, device finder, and file reader. CHECK() reports a failure and
  * keeps going, so one run shows every problem. Exit status is 0 only if
  * every check passed. Doubles are compared with NEAR() and a tolerance.
+ * The find/read tests build a fake 1-Wire folder inside a temporary
+ * directory.
  */
 
 static int failures;
@@ -153,6 +162,219 @@ static void test_parse_all_zero_scratchpad(void)
     EXPECT_OK(PAD_ZERO " : crc=c8 YES\n" PAD_ZERO " t=0\n", 0.0);
 }
 
+/* ---- ds18b20_find / ds18b20_read against a fake 1-Wire folder ---- */
+
+#define GOOD_W1 PAD_23125 " : crc=57 YES\n" PAD_23125 " t=23125\n"
+#define COLD_W1 PAD_M1250 " : crc=82 YES\n" PAD_M1250 " t=-1250\n"
+#define NO_CRC_W1 PAD_23125 " : crc=57 NO\n" PAD_23125 " t=23125\n"
+
+/* The ghost entries a Pi's 1-Wire driver showed next to the real sensor. */
+#define GHOST_A "00-400000000000"
+#define GHOST_B "00-800000000000"
+
+static char tmpdir[] = "/tmp/test_sensors.XXXXXX";
+static char w1[256];  /* the fake 1-Wire folder for the current test */
+
+static void make_dir(const char *path)
+{
+    CHECK(mkdir(path, 0755) == 0);
+}
+
+static void write_file(const char *path, const char *content)
+{
+    FILE *f = fopen(path, "w");
+    CHECK(f != NULL);
+    if (f != NULL) {
+        CHECK(fputs(content, f) >= 0);
+        CHECK(fclose(f) == 0);
+    }
+}
+
+/* Start a fresh, empty fake 1-Wire folder named `name` and point `w1` at it. */
+static void use_w1(const char *name)
+{
+    snprintf(w1, sizeof w1, "%s/%s", tmpdir, name);
+    make_dir(w1);
+}
+
+/* Add the entry `entry` to the fake folder. If `content` is not NULL the
+ * entry gets a w1_slave file containing it. */
+static void add_entry(const char *entry, const char *content)
+{
+    char path[512];
+    snprintf(path, sizeof path, "%s/%s", w1, entry);
+    make_dir(path);
+    if (content != NULL) {
+        snprintf(path, sizeof path, "%s/%s/w1_slave", w1, entry);
+        write_file(path, content);
+    }
+}
+
+/* Remove a directory tree (files, symlinks, and directories). */
+static void remove_tree(const char *path)
+{
+    DIR *dir = opendir(path);
+    if (dir != NULL) {
+        struct dirent *e;
+        while ((e = readdir(dir)) != NULL) {
+            if (strcmp(e->d_name, ".") != 0 && strcmp(e->d_name, "..") != 0) {
+                char child[512];
+                snprintf(child, sizeof child, "%s/%s", path, e->d_name);
+                struct stat st;
+                if (lstat(child, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    remove_tree(child);
+                } else {
+                    unlink(child);
+                }
+            }
+        }
+        closedir(dir);
+    }
+    rmdir(path);
+}
+
+static void test_find_and_read(void)
+{
+    use_w1("ok");
+    add_entry("28-0000075a1b2c", GOOD_W1);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == 0);
+    char expected[512];
+    snprintf(expected, sizeof expected, "%s/28-0000075a1b2c/w1_slave", w1);
+    CHECK(strcmp(path, expected) == 0);
+
+    float t = SENTINEL;
+    CHECK(ds18b20_read(path, &t) == SAMPLE_OK);
+    NEAR(t, 23.125, 1e-4);
+}
+
+static void test_find_ghosts_only(void)
+{
+    use_w1("ghosts");
+    add_entry(GHOST_A, NULL);
+    add_entry(GHOST_B, NULL);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == -1);
+    CHECK(path[0] == '\0');
+}
+
+static void test_find_ignores_ghosts(void)
+{
+    use_w1("mixed");
+    add_entry(GHOST_A, NULL);
+    add_entry("28-0000075a1b2c", GOOD_W1);
+    add_entry(GHOST_B, NULL);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == 0);
+    CHECK(strstr(path, "/28-0000075a1b2c/w1_slave") != NULL);
+}
+
+static void test_find_picks_smallest(void)
+{
+    use_w1("two");
+    add_entry("28-bbbbbbbbbbbb", GOOD_W1);
+    add_entry("28-aaaaaaaaaaaa", COLD_W1);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == 0);
+    CHECK(strstr(path, "/28-aaaaaaaaaaaa/w1_slave") != NULL);
+    float t = SENTINEL;
+    CHECK(ds18b20_read(path, &t) == SAMPLE_OK);
+    NEAR(t, -1.25, 1e-4);
+}
+
+static void test_find_missing_dir(void)
+{
+    char missing[300];
+    snprintf(missing, sizeof missing, "%s/no_such_folder", tmpdir);
+    char path[512];
+    CHECK(ds18b20_find(missing, path, sizeof path) == -1);
+    CHECK(path[0] == '\0');
+
+    /* A file is not a folder either. */
+    char file[300];
+    snprintf(file, sizeof file, "%s/just_a_file", tmpdir);
+    write_file(file, "x\n");
+    CHECK(ds18b20_find(file, path, sizeof path) == -1);
+}
+
+static void test_find_bad_args(void)
+{
+    use_w1("args");
+    add_entry("28-0000075a1b2c", GOOD_W1);
+
+    char expected[512];
+    snprintf(expected, sizeof expected, "%s/28-0000075a1b2c/w1_slave", w1);
+    size_t need = strlen(expected) + 1;  /* including the NUL */
+
+    char path[512];
+    CHECK(ds18b20_find(NULL, path, sizeof path) == -1);
+    CHECK(ds18b20_find(w1, NULL, sizeof path) == -1);
+    CHECK(ds18b20_find(w1, path, 0) == -1);
+    CHECK(ds18b20_find(w1, path, 10) == -1);          /* far too small */
+    CHECK(ds18b20_find(w1, path, need - 1) == -1);    /* one byte short */
+    CHECK(path[0] == '\0');                           /* never a cut-off path */
+    CHECK(ds18b20_find(w1, path, need) == 0);         /* exact fit */
+    CHECK(strcmp(path, expected) == 0);
+}
+
+static void test_read_crc_no(void)
+{
+    use_w1("crcno");
+    add_entry("28-0000075a1b2c", NO_CRC_W1);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == 0);
+    float t = SENTINEL;
+    CHECK(ds18b20_read(path, &t) == SAMPLE_ERR_READ);
+    CHECK(t == SENTINEL);
+}
+
+static void test_read_deleted(void)
+{
+    use_w1("deleted");
+    add_entry("28-0000075a1b2c", GOOD_W1);
+
+    char path[512];
+    CHECK(ds18b20_find(w1, path, sizeof path) == 0);
+    CHECK(unlink(path) == 0);  /* the sensor vanishes after being found */
+    float t = SENTINEL;
+    CHECK(ds18b20_read(path, &t) == SAMPLE_ERR_READ);
+    CHECK(t == SENTINEL);
+}
+
+static void test_read_unreadable(void)
+{
+    use_w1("unreadable");
+    add_entry("28-0000075a1b2c", GOOD_W1);
+
+    char dirpath[512];
+    snprintf(dirpath, sizeof dirpath, "%s/28-0000075a1b2c", w1);
+    float t = SENTINEL;
+    CHECK(ds18b20_read(dirpath, &t) == SAMPLE_ERR_READ);       /* a directory */
+    CHECK(t == SENTINEL);
+
+    /* A file at or over the size limit is rejected, not cut off. */
+    char big[DS18B20_READ_MAX_BYTES + 100];
+    memset(big, 'x', sizeof big - 1);
+    big[sizeof big - 1] = '\0';
+    char bigpath[512];
+    snprintf(bigpath, sizeof bigpath, "%s/big", w1);
+    write_file(bigpath, big);
+    CHECK(ds18b20_read(bigpath, &t) == SAMPLE_ERR_READ);
+    CHECK(t == SENTINEL);
+
+    char missing[512];
+    snprintf(missing, sizeof missing, "%s/nothing_here", w1);
+    CHECK(ds18b20_read(missing, &t) == SAMPLE_ERR_READ);
+    CHECK(ds18b20_read(NULL, &t) == SAMPLE_ERR_READ);
+    CHECK(ds18b20_read(bigpath, NULL) == SAMPLE_ERR_READ);
+    CHECK(t == SENTINEL);
+}
+
 static void run(const char *name, void (*test)(void))
 {
     int before = failures;
@@ -168,6 +390,11 @@ static void run(const char *name, void (*test)(void))
 
 int main(void)
 {
+    if (mkdtemp(tmpdir) == NULL) {
+        perror("mkdtemp");
+        return 1;
+    }
+
     RUN(test_parse_ok);
     RUN(test_parse_limits);
     RUN(test_parse_crc_bad);
@@ -176,6 +403,17 @@ int main(void)
     RUN(test_parse_malformed_t);
     RUN(test_parse_short_input);
     RUN(test_parse_all_zero_scratchpad);
+    RUN(test_find_and_read);
+    RUN(test_find_ghosts_only);
+    RUN(test_find_ignores_ghosts);
+    RUN(test_find_picks_smallest);
+    RUN(test_find_missing_dir);
+    RUN(test_find_bad_args);
+    RUN(test_read_crc_no);
+    RUN(test_read_deleted);
+    RUN(test_read_unreadable);
+
+    remove_tree(tmpdir);
 
     printf("\n%d checks, %d failed\n", checks, failures);
     if (failures == 0) {

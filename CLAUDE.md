@@ -11,7 +11,7 @@ The repository contains a problem memo (`README.md`), a design document (`DESIGN
 ```
 make test    # build and run all tests (build/test_applog, test_mold, test_sensors)
 make asan    # same tests under AddressSanitizer + UBSan (build/asan/)
-make         # build only
+make         # build only (also builds build/ds18b20_reader)
 make clean   # remove build/
 ```
 
@@ -47,10 +47,10 @@ Rishab's sessions write these:
 
 - `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews). Pure computation: inputs must be finite, and the hub only passes readings whose status is `SAMPLE_OK`. Math, `mold_init`, and `mold_update` (wet-hour accumulation plus level state machine) done. With no surface reading, `degraded` is set and condensation is never reported.
 - `tests/test_mold.c` — tests for the mold math, wet-hour accumulation, and the level state machine
-- `src/sensors/ds18b20.{c,h}` — pure parser for the DS18B20 `w1_slave` text (`ds18b20_parse`): returns `SAMPLE_OK` with the temperature, or `SAMPLE_ERR_READ` for a bad CRC verdict, missing/malformed `t=`, the 85000 power-on value, out-of-range values, an all-zero scratchpad (stuck-low data line), or short/NULL input. No file I/O.
-- `tests/test_sensors.c` — tests for the DS18B20 parser
+- `src/sensors/ds18b20.{c,h}` — DS18B20 support. `ds18b20_parse` is a pure parser for the `w1_slave` text: `SAMPLE_OK` with the temperature, or `SAMPLE_ERR_READ` for a bad CRC verdict, missing/malformed `t=`, the 85000 power-on value, out-of-range values, an all-zero scratchpad (stuck-low data line), or short/NULL input. `ds18b20_find` returns the `w1_slave` path of the smallest-named `28-*` entry in a 1-Wire folder (ignoring `00-*` ghosts such as `00-400000000000` and `00-800000000000`). `ds18b20_read` reads that file into a bounded buffer and parses it.
+- `src/sensors/ds18b20_reader.c` — the temperature sensor process: every `--interval` seconds (default 30) it finds the device (re-finding after any failure so replugging works), reads it, fills a `sample_t` (`SENSOR_DS18B20_TEMP`, `seq` incremented on every reading including failures), and prints one line per sample to stdout; the hub connection comes later. Flags: `--w1-dir` (default `/sys/bus/w1/devices`), `--interval`, `--once`. Exits cleanly on SIGINT/SIGTERM. With `--once` the exit status is 0 for an OK reading and 1 for an error; 2 is bad arguments.
+- `tests/test_sensors.c` — tests for the DS18B20 parser, `ds18b20_find`, and `ds18b20_read` (the last two against a fake 1-Wire folder in a temp directory)
 - `src/sensors/si7021_reader.c` — humidity sensor process (empty placeholder)
-- `src/sensors/ds18b20_reader.c` — temperature sensor process (empty placeholder; will read `w1_slave` and call `ds18b20_parse`)
 
 Still empty placeholders (owned/worked on separately; don't modify without asking):
 

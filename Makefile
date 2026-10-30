@@ -15,10 +15,12 @@ MOLD_SRC   = tests/test_mold.c src/analysis/mold.c
 MOLD_DEP   = src/analysis/mold.h
 SENSORS_SRC = tests/test_sensors.c src/sensors/ds18b20.c
 SENSORS_DEP = src/sensors/ds18b20.h src/common/sample.h
+READER_SRC  = src/sensors/ds18b20_reader.c src/sensors/ds18b20.c
+READER_DEP  = src/sensors/ds18b20.h src/common/sample.h
 
 .PHONY: all test asan clean
 
-all: $(BUILD)/test_applog $(BUILD)/test_mold $(BUILD)/test_sensors
+all: $(BUILD)/test_applog $(BUILD)/test_mold $(BUILD)/test_sensors $(BUILD)/ds18b20_reader
 
 # Build and run all tests. All always run, so a failure in one does not
 # hide the others; the target fails if any failed.
@@ -44,6 +46,10 @@ $(BUILD)/test_mold: $(MOLD_SRC) $(MOLD_DEP) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) -lm
 
 $(BUILD)/test_sensors: $(SENSORS_SRC) $(SENSORS_DEP) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
+
+# The DS18B20 sensor process.
+$(BUILD)/ds18b20_reader: $(READER_SRC) $(READER_DEP) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
 
 $(ASAN)/test_applog: $(APPLOG_SRC) $(APPLOG_DEP) | $(ASAN)

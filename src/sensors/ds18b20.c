@@ -1,12 +1,21 @@
+/* Needed for opendir, readdir, and open under -std=c17. */
+#define _XOPEN_SOURCE 700
+
 #include "ds18b20.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define SCRATCHPAD_BYTES 9
+#define DEVICE_PREFIX    "28-"
+#define NAME_BUF_SIZE    256  /* a directory entry name is at most 255 bytes */
 
 /* Blanks that may trail a line: not the newline itself. */
 static bool is_blank(char c)
@@ -119,4 +128,92 @@ sample_status_t ds18b20_parse(const char *text, float *temp_c)
 
     *temp_c = (float)milli_c / 1000.0f;
     return SAMPLE_OK;
+}
+
+int ds18b20_find(const char *w1_dir, char *path_out, size_t len)
+{
+    if (w1_dir == NULL || path_out == NULL || len == 0) {
+        return -1;
+    }
+    path_out[0] = '\0';
+
+    DIR *dir = opendir(w1_dir);
+    if (dir == NULL) {
+        return -1;
+    }
+
+    /* Scan every entry and keep the smallest "28-*" name. */
+    char best[NAME_BUF_SIZE];
+    bool have_best = false;
+    struct dirent *entry;
+    errno = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (strncmp(entry->d_name, DEVICE_PREFIX, strlen(DEVICE_PREFIX)) == 0) {
+            size_t name_len = strlen(entry->d_name);
+            if (name_len < sizeof best &&
+                (!have_best || strcmp(entry->d_name, best) < 0)) {
+                memcpy(best, entry->d_name, name_len + 1);
+                have_best = true;
+            }
+        }
+        errno = 0;
+    }
+    bool listing_failed = (errno != 0);  /* readdir returns NULL on error too */
+
+    /* Nothing useful to do if closing a directory we only read fails. */
+    closedir(dir);
+
+    if (listing_failed || !have_best) {
+        return -1;
+    }
+
+    int n = snprintf(path_out, len, "%s/%s/w1_slave", w1_dir, best);
+    if (n < 0 || (size_t)n >= len) {
+        path_out[0] = '\0';
+        return -1;
+    }
+    return 0;
+}
+
+sample_status_t ds18b20_read(const char *slave_path, float *temp_c)
+{
+    if (slave_path == NULL || temp_c == NULL) {
+        return SAMPLE_ERR_READ;
+    }
+
+    int fd = open(slave_path, O_RDONLY);
+    if (fd < 0) {
+        return SAMPLE_ERR_READ;
+    }
+
+    char buf[DS18B20_READ_MAX_BYTES + 1];
+    size_t used = 0;
+    bool at_eof = false;
+    bool failed = false;
+    while (!at_eof && !failed) {
+        if (used >= DS18B20_READ_MAX_BYTES) {
+            failed = true;  /* too big to be a w1_slave file */
+        } else {
+            ssize_t n = read(fd, buf + used, DS18B20_READ_MAX_BYTES - used);
+            if (n < 0) {
+                if (errno != EINTR) {
+                    failed = true;
+                }
+            } else if (n == 0) {
+                at_eof = true;
+            } else {
+                used += (size_t)n;
+            }
+        }
+    }
+
+    /* The data is already read, so a failed close of a read-only fd does
+     * not change the result. */
+    close(fd);
+
+    if (failed) {
+        return SAMPLE_ERR_READ;
+    }
+    buf[used] = '\0';
+    return ds18b20_parse(buf, temp_c);
 }
