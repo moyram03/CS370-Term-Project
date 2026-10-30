@@ -4,17 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The sensor readers, hub, supervisor, and mold analysis files are still empty placeholders and are being worked on separately.
+The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The mold analysis interface is in `src/analysis/mold.h`; `mold_sat_vapor_hpa`, `mold_dew_point_c`, `mold_surface_rh`, `mold_init`, and `mold_update` are implemented and tested. `mold_update` accumulates wet hours and runs the OK/WATCH/RISK level state machine with enter/exit hysteresis. The sensor readers, hub, and supervisor are still empty placeholders and are being worked on separately.
 
 ## Build and test
 
 ```
-make test    # build and run the storage tests (build/test_applog)
+make test    # build and run all tests (build/test_applog, build/test_mold)
+make asan    # same tests under AddressSanitizer + UBSan (build/asan/)
 make         # build only
 make clean   # remove build/
 ```
 
-The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. Only the storage tests are wired up so far; add targets for the other components as their code lands.
+The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. `make test` runs both test binaries even if the first fails, and fails if either did. The storage and mold math tests are wired up so far; add targets for the other components as their code lands.
 
 `DESIGN.md` is the source of truth for architecture and requirements; where it differs from `README.md` (e.g. mechanism choices), follow `DESIGN.md`.
 
@@ -42,18 +43,24 @@ Implemented:
 - `tests/test_applog.c` — storage tests (append/read-back, record layout, recovery, partial writes, `read_all`)
 - `Makefile`, `.gitignore`
 
+Rishab's sessions write these:
+
+- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews). Pure computation: inputs must be finite, and the hub only passes readings whose status is `SAMPLE_OK`. Math, `mold_init`, and `mold_update` (wet-hour accumulation plus level state machine) done. With no surface reading, `degraded` is set and condensation is never reported.
+- `tests/test_mold.c` — tests for the mold math, wet-hour accumulation, and the level state machine
+- `src/sensors/si7021_reader.c` — humidity sensor process (empty placeholder)
+- `src/sensors/ds18b20_reader.c` — temperature sensor process (empty placeholder)
+
 Still empty placeholders (owned/worked on separately; don't modify without asking):
 
-- `src/sensors/si7021_reader.c` — humidity sensor process
-- `src/sensors/ds18b20_reader.c` — temperature sensor process
 - `src/hub/hub.c` — central process that receives readings, runs analysis, and writes storage
 - `src/supervisor/supervisor.c` — watches and restarts the sensor/hub processes (Mechanism E)
-- `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions
-- `tests/test_mold.c` — tests for detection logic
+
+`src/store/` is Moises's; don't modify it without asking.
 
 ## Data format (agreed; don't change without asking)
 
 - **`sample_t`** is exactly 24 bytes (enforced by `_Static_assert`): `int64_t timestamp_ms`, `uint32_t seq`, `float value`, `uint8_t sensor`, `uint8_t status`, `uint8_t reserved[6]` (always 0). It is shared by the sensors, hub, and storage, and written raw to disk.
+- **`sensor`** is a `sensor_id_t`: `SENSOR_SI7021_HUMIDITY = 1` (relative humidity, %RH), `SENSOR_DS18B20_TEMP = 2` (surface temperature, °C), `SENSOR_SI7021_TEMP = 3` (air temperature, °C; the mold analysis combines it with the humidity to compute dew point). The struct layout is unchanged.
 - **`seq`** is a per-sensor-process counter that starts at 0 when the process starts and increments on every reading, including failed reads. A gap means lost readings; a reset to 0 means the process restarted.
 - **Log record** is exactly 32 bytes: `[magic "MOLD" 4B][sample_t 24B][crc32 of bytes 0..27, 4B]`, in native (little-endian) byte order, no file header.
 
@@ -74,6 +81,19 @@ Per `DESIGN.md`: either sensor failing (keep collecting from the other sensor, r
 - **Moises**: Mechanism D (storage, log file, recovery, power-loss testing).
 - **Rishab**: Mechanism E (multi-process system, IPC, supervisor).
 - **Shared**: sensor bring-up, mold detection logic and its tests, integration, 48-hour run, final documentation.
+
+In Rishab's sessions, Claude writes `src/sensors/` and `src/analysis/` (plus `tests/test_mold.c`). The mold logic is shared work, so Moises reviews it. `src/store/` stays Moises's.
+
+## Workflow
+
+- Plan first for multi-file or algorithmic changes, and wait for Rishab's approval before writing code.
+- A change is only done when `make test` passes.
+- Commit messages use the form `M<n>: <what>`.
+- Never weaken, skip, or delete a test to make it pass.
+
+## Style
+
+C17; use full `if`/`else` blocks instead of the ternary `?:` operator.
 
 ## AI-use notes
 
