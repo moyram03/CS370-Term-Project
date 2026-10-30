@@ -9,13 +9,13 @@ The repository contains a problem memo (`README.md`), a design document (`DESIGN
 ## Build and test
 
 ```
-make test    # build and run all tests (build/test_applog, build/test_mold)
+make test    # build and run all tests (build/test_applog, test_mold, test_sensors)
 make asan    # same tests under AddressSanitizer + UBSan (build/asan/)
 make         # build only
 make clean   # remove build/
 ```
 
-The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. `make test` runs both test binaries even if the first fails, and fails if either did. The storage and mold math tests are wired up so far; add targets for the other components as their code lands.
+The Makefile compiles with `gcc -std=c17 -Wall -Wextra -Werror`, so any warning fails the build. Build output goes to `build/`, which is git-ignored. `make test` runs every test binary even if an earlier one fails, and fails if any did. The storage, mold, and DS18B20 parser tests are wired up so far; add targets for the other components as their code lands.
 
 `DESIGN.md` is the source of truth for architecture and requirements; where it differs from `README.md` (e.g. mechanism choices), follow `DESIGN.md`.
 
@@ -47,8 +47,10 @@ Rishab's sessions write these:
 
 - `src/analysis/mold.{c,h}` — logic combining both readings to flag mold-favorable conditions (shared; Moises reviews). Pure computation: inputs must be finite, and the hub only passes readings whose status is `SAMPLE_OK`. Math, `mold_init`, and `mold_update` (wet-hour accumulation plus level state machine) done. With no surface reading, `degraded` is set and condensation is never reported.
 - `tests/test_mold.c` — tests for the mold math, wet-hour accumulation, and the level state machine
+- `src/sensors/ds18b20.{c,h}` — pure parser for the DS18B20 `w1_slave` text (`ds18b20_parse`): returns `SAMPLE_OK` with the temperature, or `SAMPLE_ERR_READ` for a bad CRC verdict, missing/malformed `t=`, the 85000 power-on value, out-of-range values, an all-zero scratchpad (stuck-low data line), or short/NULL input. No file I/O.
+- `tests/test_sensors.c` — tests for the DS18B20 parser
 - `src/sensors/si7021_reader.c` — humidity sensor process (empty placeholder)
-- `src/sensors/ds18b20_reader.c` — temperature sensor process (empty placeholder)
+- `src/sensors/ds18b20_reader.c` — temperature sensor process (empty placeholder; will read `w1_slave` and call `ds18b20_parse`)
 
 Still empty placeholders (owned/worked on separately; don't modify without asking):
 
