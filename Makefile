@@ -19,6 +19,10 @@ READER_SRC  = src/sensors/ds18b20_reader.c src/sensors/ds18b20.c
 READER_DEP  = src/sensors/ds18b20.h src/common/sample.h
 SI_READER_SRC = src/sensors/si7021_reader.c src/sensors/si7021_i2c.c src/sensors/si7021.c
 SI_READER_DEP = src/sensors/si7021.h src/sensors/si7021_i2c.h src/common/sample.h
+MOLDDET_SRC = src/app/molddet.c src/store/applog.c src/analysis/mold.c \
+              src/sensors/ds18b20.c src/sensors/si7021.c src/sensors/si7021_i2c.c
+MOLDDET_DEP = src/store/applog.h src/analysis/mold.h src/sensors/ds18b20.h \
+              src/sensors/si7021.h src/sensors/si7021_i2c.h src/common/sample.h
 
 .PHONY: all test asan clean
 
@@ -59,8 +63,12 @@ $(BUILD)/ds18b20_reader: $(READER_SRC) $(READER_DEP) | $(BUILD)
 $(BUILD)/si7021_reader: $(SI_READER_SRC) $(SI_READER_DEP) | $(BUILD)
 	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^)
 
+# The single-process mold detector. Linux only, like the Si7021 reader.
+$(BUILD)/molddet: $(MOLDDET_SRC) $(MOLDDET_DEP) | $(BUILD)
+	$(CC) $(CFLAGS) -o $@ $(filter %.c,$^) -lm
+
 ifeq ($(shell uname -s),Linux)
-all: $(BUILD)/si7021_reader
+all: $(BUILD)/si7021_reader $(BUILD)/molddet
 endif
 
 $(ASAN)/test_applog: $(APPLOG_SRC) $(APPLOG_DEP) | $(ASAN)

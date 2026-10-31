@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The mold analysis interface is in `src/analysis/mold.h`; `mold_sat_vapor_hpa`, `mold_dew_point_c`, `mold_surface_rh`, `mold_init`, and `mold_update` are implemented and tested. `mold_update` accumulates wet hours and runs the OK/WATCH/RISK level state machine with enter/exit hysteresis. The sensor readers are implemented; the hub and supervisor are still empty placeholders and are being worked on separately.
+The repository contains a problem memo (`README.md`), a design document (`DESIGN.md`), and the source tree. The storage layer (Mechanism D) is implemented and tested: `src/common/sample.h`, `src/store/applog.{c,h}`, and `tests/test_applog.c`. The mold analysis interface is in `src/analysis/mold.h`; `mold_sat_vapor_hpa`, `mold_dew_point_c`, `mold_surface_rh`, `mold_init`, and `mold_update` are implemented and tested. `mold_update` accumulates wet hours and runs the OK/WATCH/RISK level state machine with enter/exit hysteresis. The sensor readers are implemented, and `src/app/molddet.c` ties the sensors, storage, and mold analysis together in one process. The hub and supervisor are still empty placeholders and are being worked on separately.
 
 ## Build and test
 
 ```
 make test    # build and run all tests (build/test_applog, test_mold, test_sensors)
 make asan    # same tests under AddressSanitizer + UBSan (build/asan/); does not run on the Pi kernel
-make         # build only (also builds build/ds18b20_reader, and build/si7021_reader on Linux)
+make         # build only (also builds build/ds18b20_reader, and build/si7021_reader and build/molddet on Linux)
 make clean   # remove build/
 ```
 
@@ -41,7 +41,7 @@ Implemented:
 - `src/common/sample.h` — shared reading type `sample_t` (see below)
 - `src/store/applog.{c,h}` — append-only log and recovery (Mechanism D)
 - `tests/test_applog.c` — storage tests (append/read-back, record layout, recovery, partial writes, `read_all`)
-- `Makefile`, `.gitignore`
+- `Makefile`, `.gitignore` (ignores `build/` and `*.log`)
 
 Rishab's sessions write these:
 
@@ -53,6 +53,8 @@ Rishab's sessions write these:
 - `tests/test_sensors.c` — tests for the DS18B20 parser, `ds18b20_find`, and `ds18b20_read` (the last two against a fake 1-Wire folder in a temp directory), and the Si7021 CRC and parsers
 - `src/sensors/si7021_i2c.{c,h}` — Si7021 I2C access through Linux i2c-dev (Linux only, no unit test since it needs hardware; checked on the Pi). `si7021_open(bus)` opens the bus and addresses 0x40; `si7021_close(fd)`; `si7021_read(fd, &rh, &temp)` sends 0xF5 (humidity, no hold), waits 25 ms, then retries the 3-byte read every 5 ms while the sensor NACKs (`EREMOTEIO` or `ENXIO`) up to 100 ms after the command (`SAMPLE_ERR_TIMEOUT`), then sends 0xE0 and reads the 2-byte temperature from the same measurement. Any other failure is `SAMPLE_ERR_READ`. Outputs are only written on `SAMPLE_OK`, both together. EINTR is retried.
 - `src/sensors/si7021_reader.c` — the humidity/air-temperature sensor process, same structure as `ds18b20_reader.c`: every `--interval` seconds (default 30) it opens the bus if needed, takes one reading, and prints two lines to stdout (`sensor=si7021_rh`, then `sensor=si7021_temp`); the hub connection comes later. Both samples share one `seq` counter (n and n+1, failures counted too). If the reading fails, both samples get the same error status, because the temperature comes from the humidity measurement, and the bus is closed so the next cycle reopens it. Errors and recovery are logged to stderr once each. Flags: `--bus` (default `/dev/i2c-1`), `--interval`, `--once`. Exit codes as for `ds18b20_reader` (with `--once`, 1 if either sample failed).
+
+- `src/app/molddet.c` — single-process mold detector (Linux only, `build/molddet`; no unit test since it needs hardware; checked on the Pi). It stands in for the hub and the sensor processes until Mechanism E exists. Startup: `applog_open(--log, default ./molddet.log)` and prints `recovery: records_kept=N bytes_truncated=M`; an open failure exits 1. Every `--interval` seconds (default 30) it reads the Si7021 (bus `/dev/i2c-1`, reopened after any failure) and the DS18B20 (`/sys/bus/w1/devices`, re-found after any failure), builds three samples in the order humidity, Si7021 temp, DS18B20 temp with one shared `seq` counter (failures included, so `seq` goes up by 3 per cycle and resets to 0 on restart), and appends each; an append failure is logged to stderr once and does not stop the loop. It then calls `mold_update` (`have_air` only if both Si7021 samples are OK, `have_surface` only if the DS18B20 is OK; `dt` is monotonic seconds since the last successful update, 0 the first time) and prints one status line, or `no air data` if `mold_update` returns -1. `applog_sync` runs every `--sync-every` seconds (default 300, monotonic). SIGINT/SIGTERM stop it cleanly (`applog_close` fsyncs, exit 0). `--dump PATH` prints every record with `applog_read_all`, then `records: N`, and exits 0. **Known limitation:** `wet_hours` and the level are not saved, so they restart at 0 and OK after every restart, even though the log keeps the readings. Its small helpers (clock, `sleep_until`, name functions) are copies of those in the readers.
 
 Still empty placeholders (owned/worked on separately; don't modify without asking):
 
