@@ -10,10 +10,10 @@
  * Si7021 humidity/temperature sensor support: the checksum and the
  * conversion of raw I2C replies into readings. Pure functions on byte
  * buffers, with no I2C or other I/O, so they can be tested without
- * hardware. The I2C part comes later.
+ * hardware. The I2C access is in si7021_i2c.h.
  *
- * The sensor measures humidity first (command 0xE5, reply of 3 bytes: MSB,
- * LSB, CRC). It then keeps the temperature from that same measurement,
+ * The sensor measures humidity first (command 0xE5, or 0xF5 for the no-hold
+ * variant, which returns the same reply of 3 bytes: MSB, LSB, CRC). It then keeps the temperature from that same measurement,
  * which is read with command 0xE0 (reply of 2 bytes: MSB, LSB, no CRC).
  * In both replies the two low bits of the 16-bit code are status bits, not
  * part of the value, so they are masked off before converting.
