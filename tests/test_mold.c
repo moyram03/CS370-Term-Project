@@ -110,15 +110,21 @@ static void test_init(void)
 
 static void test_no_air(void)
 {
+    /* memcmp reads every byte, padding included, so fill the whole structs
+     * with a fixed pattern first and copy them with memcpy. Assigning a
+     * struct does not promise to copy padding. */
     mold_state_t s;
+    memset(&s, 0xCD, sizeof s);
     mold_init(&s);
     s.wet_hours = 1.5;
     s.level = MOLD_WATCH;
-    mold_state_t s_before = s;
+    mold_state_t s_before;
+    memcpy(&s_before, &s, sizeof s);
 
     mold_result_t out;
     memset(&out, 0xAB, sizeof out);
-    mold_result_t out_before = out;
+    mold_result_t out_before;
+    memcpy(&out_before, &out, sizeof out);
 
     mold_input_t in = make_input(24.0, 60.0, 18.0);
     in.have_air = false;
